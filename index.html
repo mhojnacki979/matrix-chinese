@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>汉字雨 · Hanzi Rain</title>
+<meta name="description" content="Chinese characters falling down the screen — a full-screen digital rain rendered on canvas." />
+<meta name="robots" content="noindex" />
+<style>
+  :root {
+    --void: #070303;
+    --void-soft: #16060a;
+    --rain: #f5253a;
+    --rain-dim: #b01524;
+    --head: #ffe6e9;
+    --hud: #ff5c6b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--void);
+    overflow: hidden;
+  }
+
+  body {
+    color: var(--rain);
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  canvas#rain {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--void);
+  }
+
+  /* Vignette + phosphor scanlines: the screen this rain is supposed to be falling on. */
+  .crt {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0px,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, 0.17) 3px,
+        rgba(0, 0, 0, 0.17) 4px
+      ),
+      radial-gradient(120% 90% at 50% 45%, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.72) 100%);
+  }
+
+  .hint {
+    position: fixed;
+    left: max(1.25rem, env(safe-area-inset-left));
+    bottom: max(1.25rem, env(safe-area-inset-bottom));
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--hud);
+    text-shadow: 0 0 10px rgba(245, 37, 58, 0.45);
+    opacity: 0.72;
+    transition: opacity 900ms ease;
+  }
+
+  .hint[data-idle="true"] { opacity: 0; }
+
+  .hint kbd {
+    font: inherit;
+    color: var(--head);
+    border: 1px solid rgba(255, 92, 107, 0.4);
+    border-radius: 2px;
+    padding: 0.1em 0.4em;
+    margin-right: 0.4em;
+  }
+
+  .state {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: clamp(1.5rem, 6vw, 3rem);
+    letter-spacing: 0.5em;
+    text-indent: 0.5em;
+    color: var(--head);
+    text-shadow: 0 0 24px rgba(245, 37, 58, 0.8);
+    opacity: 0;
+    transition: opacity 250ms ease;
+  }
+
+  .state[data-visible="true"] { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hint, .state { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="rain" aria-label="Chinese characters falling down the screen" role="img"></canvas>
+  <div class="crt"></div>
+  <div class="state" id="state" aria-hidden="true">暂停</div>
+  <ul class="hint" id="hint">
+    <li><kbd>Space</kbd>Pause</li>
+    <li><kbd>↑ ↓</kbd>Speed</li>
+    <li><kbd>R</kbd>Reseed</li>
+  </ul>
+
+<script>
+(function () {
+  'use strict';
+
+  // Common hanzi — frequent enough to look like language rather than noise.
+  var GLYPHS =
+    '的一是不了人我在有他这为之大来以个中上们到说国和地也子时道出而要于就下得可你年生' +
+    '自会那后能对着事其里所去行过家十用发天如然作方成者多日都三小军二无同么经法当起与好' +
+    '看学进种将还分此心前面又定见只主没公从水风雨雷电山川木火土金石光影空色声字数机电脑' +
+    '网信息真假虚实梦醒生死始终门开关内外东西南北左右高低快慢新旧黑白红青蓝紫银铁龙凤鹤' +
+    '雪云雾霜露星月阳阴春夏秋冬江河海湖林森竹松花草鸟鱼虫兽神仙魔灵魂命运缘劫';
+
+  var canvas = document.getElementById('rain');
+  var ctx = canvas.getContext('2d', { alpha: false });
+  var hint = document.getElementById('hint');
+  var stateLabel = document.getElementById('state');
+
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var CELL = 0;           // glyph cell size in CSS pixels
+  var cols = 0;
+  var rows = 0;
+  var columns = [];       // one falling stream per column
+  var dpr = 1;
+  var speedScale = 1;
+  var paused = false;
+
+  function glyph() {
+    return GLYPHS.charAt((Math.random() * GLYPHS.length) | 0);
+  }
+
+  function seedColumn(x, spawnAbove) {
+    return {
+      x: x,
+      // Rows are fractional so streams fall at their own pace, not the frame rate's.
+      row: spawnAbove ? -Math.random() * rows : Math.random() * rows,
+      last: -1,
+      speed: 3 + Math.random() * 8,       // cells per second
+      gap: Math.random() < 0.05           // a few columns idle, so the field isn't a wall
+    };
+  }
+
+  function paint() {
+    ctx.fillStyle = '#070303';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+
+    CELL = w < 640 ? 13 : w < 1200 ? 15 : 16;
+    cols = Math.ceil(w / CELL);
+    rows = Math.ceil(h / CELL);
+
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.textBaseline = 'top';
+    ctx.font = CELL + 'px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Heiti SC", "Source Han Sans SC", sans-serif';
+
+    // Seed mid-fall so the screen is already raining on the first frame.
+    columns = [];
+    for (var i = 0; i < cols; i++) columns.push(seedColumn(i, false));
+
+    paint();
+    if (reduceMotion) still();
+  }
+
+  function drawGlyph(col, row, color, glow) {
+    var x = col * CELL;
+    var y = row * CELL;
+
+    ctx.fillStyle = '#070303';
+    ctx.fillRect(x, y, CELL, CELL);
+
+    ctx.shadowBlur = glow ? 14 : 0;
+    ctx.shadowColor = glow ? 'rgba(245, 37, 58, 0.95)' : 'transparent';
+    ctx.fillStyle = color;
+    ctx.fillText(glyph(), x, y);
+    ctx.shadowBlur = 0;
+  }
+
+  // One motionless frame for viewers who asked not to be moved.
+  function still() {
+    for (var c = 0; c < cols; c++) {
+      if (columns[c].gap) continue;
+      var head = (Math.random() * rows) | 0;
+      var len = 12 + ((Math.random() * 24) | 0);
+      for (var t = 0; t < len; t++) {
+        var r = head - t;
+        if (r < 0) break;
+        var fade = 1 - t / len;
+        drawGlyph(c, r, t === 0 ? '#ffe6e9' : 'rgba(245, 37, 58, ' + (fade * 0.9).toFixed(3) + ')', t === 0);
+      }
+    }
+  }
+
+  var lastTime = 0;
+  var fadeDebt = 0;
+
+  function frame(time) {
+    if (!lastTime) lastTime = time;
+    var dt = Math.min((time - lastTime) / 1000, 0.05);
+    lastTime = time;
+
+    if (!paused) {
+      // Everything already on screen decays toward the void; that decay is the trail.
+      // Tied to elapsed time, so trails are the same length at 60Hz and at 120Hz.
+      // Held back until it is worth at least 5% alpha: below that, 8-bit rounding
+      // leaves the dimmest glyphs on screen forever as a red haze.
+      fadeDebt += dt;
+      var fade = 1 - Math.pow(0.985, fadeDebt * 60);
+      if (fade >= 0.05) {
+        ctx.fillStyle = 'rgba(7, 3, 3, ' + fade.toFixed(4) + ')';
+        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+        fadeDebt = 0;
+      }
+
+      for (var i = 0; i < columns.length; i++) {
+        var col = columns[i];
+        if (col.gap) continue;
+
+        col.row += col.speed * speedScale * dt;
+        var next = Math.floor(col.row);
+
+        while (col.last < next) {
+          col.last++;
+          if (col.last >= 0 && col.last < rows) {
+            // Demote the old head to ordinary rain, then light the new one.
+            if (col.last - 1 >= 0) drawGlyph(i, col.last - 1, '#f5253a', false);
+            drawGlyph(i, col.last, '#ffe6e9', true);
+          }
+        }
+
+        // A character mid-stream flips to another — the rain keeps rewriting itself.
+        if (Math.random() < 0.06) {
+          var back = 1 + ((Math.random() * 10) | 0);
+          var r = col.last - back;
+          if (r >= 0 && r < rows) drawGlyph(i, r, 'rgba(176, 21, 36, 0.95)', false);
+        }
+
+        if (col.last > rows + 12 + Math.random() * 14) columns[i] = seedColumn(i, true);
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  // HUD fades out of the way once you have read it, and returns when you ask for it.
+  var idleTimer;
+  function wakeHint() {
+    hint.dataset.idle = 'false';
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { hint.dataset.idle = 'true'; }, 5000);
+  }
+
+  function togglePause() {
+    paused = !paused;
+    lastTime = 0;
+    stateLabel.dataset.visible = paused ? 'true' : 'false';
+    wakeHint();
+  }
+
+  window.addEventListener('keydown', function (e) {
+    if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); togglePause(); }
+    else if (e.key === 'ArrowUp') { speedScale = Math.min(speedScale * 1.25, 4); wakeHint(); }
+    else if (e.key === 'ArrowDown') { speedScale = Math.max(speedScale / 1.25, 0.25); wakeHint(); }
+    else if (e.key === 'r' || e.key === 'R') { resize(); wakeHint(); }
+  });
+
+  canvas.addEventListener('pointerdown', togglePause);
+  window.addEventListener('pointermove', wakeHint, { passive: true });
+
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 150);
+  });
+
+  document.addEventListener('visibilitychange', function () { lastTime = 0; });
+
+  resize();
+  wakeHint();
+  if (!reduceMotion) requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
