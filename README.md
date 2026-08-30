@@ -17,8 +17,10 @@ The hint strip fades out after five seconds and returns on mouse move.
 
 ## How it works
 
-Each column owns one falling stream, tracked as a fractional row position so
-streams fall at their own speed rather than the frame rate's. Every frame the
+Several streams share each column (`STREAMS_PER_COL`), each tracked as a
+fractional row position so they fall at their own speed rather than the frame
+rate's. Streams sharing a column spawn well above the top at staggered offsets,
+so they don't march in lockstep. Every frame the
 whole canvas is washed with a low-alpha rectangle of the background color; that
 decay *is* the trail. The leading glyph is drawn near-white with a shadow glow,
 and the previous head is repainted as ordinary rain the moment the stream
@@ -42,7 +44,8 @@ animation.
 Everything worth adjusting is near the top of the inline script:
 
 - Colors: the CSS custom properties in `:root` (`--rain`, `--head`, `--void`).
-- Density: `CELL` in `resize()` — smaller cells, more columns.
+- Density: `STREAMS_PER_COL` (how many streams share a column) and `CELL` in
+  `resize()` (smaller cells, more columns).
 - Speed: the `speed` range in `seedColumn()` (cells per second).
 - Tail length: the `0.985` decay base in `frame()` — closer to 1 is longer.
 - Character set: the `GLYPHS` string.

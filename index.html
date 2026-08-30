@@ -137,7 +137,8 @@
   var CELL = 0;           // glyph cell size in CSS pixels
   var cols = 0;
   var rows = 0;
-  var columns = [];       // one falling stream per column
+  var streams = [];       // several falling streams share each column
+  var STREAMS_PER_COL = 3;
   var dpr = 1;
   var speedScale = 1;
   var paused = false;
@@ -146,14 +147,15 @@
     return GLYPHS.charAt((Math.random() * GLYPHS.length) | 0);
   }
 
-  function seedColumn(x, spawnAbove) {
+  function seedStream(x, spawnAbove) {
     return {
       x: x,
       // Rows are fractional so streams fall at their own pace, not the frame rate's.
-      row: spawnAbove ? -Math.random() * rows : Math.random() * rows,
+      // Spawning well above the top staggers the streams sharing this column.
+      row: spawnAbove ? -Math.random() * rows * 1.5 : Math.random() * rows,
       last: -1,
       speed: 3 + Math.random() * 8,       // cells per second
-      gap: Math.random() < 0.05           // a few columns idle, so the field isn't a wall
+      gap: Math.random() < 0.05           // a few streams sit out, so it isn't a solid wall
     };
   }
 
@@ -181,8 +183,10 @@
     ctx.font = CELL + 'px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Heiti SC", "Source Han Sans SC", sans-serif';
 
     // Seed mid-fall so the screen is already raining on the first frame.
-    columns = [];
-    for (var i = 0; i < cols; i++) columns.push(seedColumn(i, false));
+    streams = [];
+    for (var i = 0; i < cols; i++) {
+      for (var n = 0; n < STREAMS_PER_COL; n++) streams.push(seedStream(i, false));
+    }
 
     paint();
     if (reduceMotion) still();
@@ -204,15 +208,16 @@
 
   // One motionless frame for viewers who asked not to be moved.
   function still() {
-    for (var c = 0; c < cols; c++) {
-      if (columns[c].gap) continue;
+    for (var c = 0; c < streams.length; c++) {
+      if (streams[c].gap) continue;
+      var x = streams[c].x;
       var head = (Math.random() * rows) | 0;
       var len = 12 + ((Math.random() * 24) | 0);
       for (var t = 0; t < len; t++) {
         var r = head - t;
         if (r < 0) break;
         var fade = 1 - t / len;
-        drawGlyph(c, r, t === 0 ? '#ffe6e9' : 'rgba(245, 37, 58, ' + (fade * 0.9).toFixed(3) + ')', t === 0);
+        drawGlyph(x, r, t === 0 ? '#ffe6e9' : 'rgba(245, 37, 58, ' + (fade * 0.9).toFixed(3) + ')', t === 0);
       }
     }
   }
@@ -238,8 +243,8 @@
         fadeDebt = 0;
       }
 
-      for (var i = 0; i < columns.length; i++) {
-        var col = columns[i];
+      for (var i = 0; i < streams.length; i++) {
+        var col = streams[i];
         if (col.gap) continue;
 
         col.row += col.speed * speedScale * dt;
@@ -249,8 +254,8 @@
           col.last++;
           if (col.last >= 0 && col.last < rows) {
             // Demote the old head to ordinary rain, then light the new one.
-            if (col.last - 1 >= 0) drawGlyph(i, col.last - 1, '#f5253a', false);
-            drawGlyph(i, col.last, '#ffe6e9', true);
+            if (col.last - 1 >= 0) drawGlyph(col.x, col.last - 1, '#f5253a', false);
+            drawGlyph(col.x, col.last, '#ffe6e9', true);
           }
         }
 
@@ -258,10 +263,10 @@
         if (Math.random() < 0.06) {
           var back = 1 + ((Math.random() * 10) | 0);
           var r = col.last - back;
-          if (r >= 0 && r < rows) drawGlyph(i, r, 'rgba(176, 21, 36, 0.95)', false);
+          if (r >= 0 && r < rows) drawGlyph(col.x, r, 'rgba(176, 21, 36, 0.95)', false);
         }
 
-        if (col.last > rows + 12 + Math.random() * 14) columns[i] = seedColumn(i, true);
+        if (col.last > rows + 12 + Math.random() * 14) streams[i] = seedStream(col.x, true);
       }
     }
 
