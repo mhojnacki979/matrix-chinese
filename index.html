@@ -154,7 +154,7 @@
       // Spawning well above the top staggers the streams sharing this column.
       row: spawnAbove ? -Math.random() * rows * 1.5 : Math.random() * rows,
       last: -1,
-      speed: 3 + Math.random() * 8,       // cells per second
+      speed: 2 + Math.random() * 5.3,     // cells per second
       gap: Math.random() < 0.05           // a few streams sit out, so it isn't a solid wall
     };
   }
@@ -236,7 +236,7 @@
       // Held back until it is worth at least 5% alpha: below that, 8-bit rounding
       // leaves the dimmest glyphs on screen forever as a red haze.
       fadeDebt += dt;
-      var fade = 1 - Math.pow(0.985, fadeDebt * 60);
+      var fade = 1 - Math.pow(0.99, fadeDebt * 60);
       if (fade >= 0.05) {
         ctx.fillStyle = 'rgba(7, 3, 3, ' + fade.toFixed(4) + ')';
         ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);

@@ -47,5 +47,5 @@ Everything worth adjusting is near the top of the inline script:
 - Density: `STREAMS_PER_COL` (how many streams share a column) and `CELL` in
   `resize()` (smaller cells, more columns).
 - Speed: the `speed` range in `seedColumn()` (cells per second).
-- Tail length: the `0.985` decay base in `frame()` — closer to 1 is longer.
+- Tail length: the `0.99` decay base in `frame()` — closer to 1 is longer.
 - Character set: the `GLYPHS` string.
