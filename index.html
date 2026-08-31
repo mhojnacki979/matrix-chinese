@@ -8,12 +8,12 @@
 <meta name="robots" content="noindex" />
 <style>
   :root {
-    --void: #070303;
-    --void-soft: #16060a;
-    --rain: #f5253a;
-    --rain-dim: #b01524;
-    --head: #ffe6e9;
-    --hud: #ff5c6b;
+    --void: #03060d;
+    --void-soft: #0a1730;
+    --rain: #1b4488;
+    --rain-dim: #c3223f;
+    --head: #eef4ff;
+    --hud: #7fa8e6;
   }
 
   * { box-sizing: border-box; }
@@ -68,7 +68,7 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--hud);
-    text-shadow: 0 0 10px rgba(245, 37, 58, 0.45);
+    text-shadow: 0 0 10px rgba(90, 150, 255, 0.45);
     opacity: 0.72;
     transition: opacity 900ms ease;
   }
@@ -78,7 +78,7 @@
   .hint kbd {
     font: inherit;
     color: var(--head);
-    border: 1px solid rgba(255, 92, 107, 0.4);
+    border: 1px solid rgba(127, 168, 230, 0.4);
     border-radius: 2px;
     padding: 0.1em 0.4em;
     margin-right: 0.4em;
@@ -93,7 +93,7 @@
     letter-spacing: 0.5em;
     text-indent: 0.5em;
     color: var(--head);
-    text-shadow: 0 0 24px rgba(245, 37, 58, 0.8);
+    text-shadow: 0 0 24px rgba(90, 150, 255, 0.8);
     opacity: 0;
     transition: opacity 250ms ease;
   }
@@ -139,6 +139,12 @@
   var rows = 0;
   var streams = [];       // several falling streams share each column
   var STREAMS_PER_COL = 3;
+  var logoCells = null;   // per-cell logo color, or null outside the wordmark
+  var logoLit = null;     // indices of the cells the mark covers
+  var logoHalo = null;    // a ring of cells kept clear, so the mark has an edge
+  var LOGO_NAVY = '#8ab3f7';
+  var LOGO_RED = '#ff6f89';
+  var LOGO_WHITE = '#ffffff';
   var dpr = 1;
   var speedScale = 1;
   var paused = false;
@@ -159,8 +165,88 @@
     };
   }
 
+  // The Ringer mark, reduced to three flat brand colors on transparency. It is never
+  // drawn to the screen — it is sampled at one pixel per character cell, and the
+  // rain paints itself in those colors as it falls through the shape.
+  var LOGO_MASK = 'data:image/png;base64,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';
+
+  var logoImg = new Image();
+  var logoReady = false;
+  logoImg.onload = function () { logoReady = true; buildLogoMask(); if (reduceMotion) still(); };
+  logoImg.src = LOGO_MASK;
+
+  function buildLogoMask() {
+    logoCells = null;
+    logoLit = null;
+    logoHalo = null;
+    if (!logoReady || !cols || !rows) return;
+
+    // One pixel per cell: each character gets the average color under it.
+    var off = document.createElement('canvas');
+    off.width = cols;
+    off.height = rows;
+    var octx = off.getContext('2d');
+
+    var scale = Math.min((rows * 0.82) / logoImg.height, (cols * 0.5) / logoImg.width);
+    var w = logoImg.width * scale;
+    var h = logoImg.height * scale;
+    octx.drawImage(logoImg, (cols - w) / 2, (rows - h) / 2, w, h);
+
+    var data = octx.getImageData(0, 0, cols, rows).data;
+    var cells = new Array(cols * rows);
+    var lit = [];
+    for (var i = 0; i < cols * rows; i++) {
+      var a = data[i * 4 + 3];
+      if (a < 110) { cells[i] = null; continue; }
+      // Snap to the nearest brand color rather than averaging: downscaling blends
+      // navy into red at the edges, and a muddy middle reads as noise, not a logo.
+      var r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+      cells[i] = r > 150 && g < 120 ? LOGO_RED
+        : r > 170 && g > 170 && b > 170 ? LOGO_WHITE
+        : LOGO_NAVY;
+      lit.push(i);
+    }
+    // Rain is held out of a two-cell ring around the mark. Without that gap the
+    // silhouette dissolves into the field around it, however bright it is.
+    var halo = new Uint8Array(cols * rows);
+    var R = 2;
+    for (var j = 0; j < lit.length; j++) {
+      var cx = lit[j] % cols, cy = (lit[j] / cols) | 0;
+      for (var dy = -R; dy <= R; dy++) {
+        for (var dx = -R; dx <= R; dx++) {
+          var nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+          var ni = ny * cols + nx;
+          if (!cells[ni]) halo[ni] = 1;
+        }
+      }
+    }
+
+    logoCells = cells;
+    logoLit = lit;
+    logoHalo = halo;
+  }
+
+  // The wordmark is a standing field of characters, not something the rain has to
+  // happen to hit: a slice of its cells is repainted every frame, which outruns the
+  // decay and leaves the logo legible and shimmering while rain falls through it.
+  function shimmerLogo() {
+    if (!logoLit) return;
+    var n = Math.max(1, (logoLit.length * 0.08) | 0);
+    for (var k = 0; k < n; k++) {
+      var i = logoLit[(Math.random() * logoLit.length) | 0];
+      drawGlyph(i % cols, (i / cols) | 0, logoCells[i], false);
+    }
+  }
+
+  // The color an ordinary (non-head) glyph takes at this cell.
+  function bodyColor(x, row) {
+    var lit = logoCells && row >= 0 && row < rows ? logoCells[row * cols + x] : null;
+    return lit || '#1b4488';
+  }
+
   function paint() {
-    ctx.fillStyle = '#070303';
+    ctx.fillStyle = '#03060d';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
@@ -188,6 +274,8 @@
       for (var n = 0; n < STREAMS_PER_COL; n++) streams.push(seedStream(i, false));
     }
 
+    buildLogoMask();
+
     paint();
     if (reduceMotion) still();
   }
@@ -196,11 +284,11 @@
     var x = col * CELL;
     var y = row * CELL;
 
-    ctx.fillStyle = '#070303';
+    ctx.fillStyle = '#03060d';
     ctx.fillRect(x, y, CELL, CELL);
 
     ctx.shadowBlur = glow ? 14 : 0;
-    ctx.shadowColor = glow ? 'rgba(245, 37, 58, 0.95)' : 'transparent';
+    ctx.shadowColor = glow ? 'rgba(90, 150, 255, 0.9)' : 'transparent';
     ctx.fillStyle = color;
     ctx.fillText(glyph(), x, y);
     ctx.shadowBlur = 0;
@@ -217,7 +305,8 @@
         var r = head - t;
         if (r < 0) break;
         var fade = 1 - t / len;
-        drawGlyph(x, r, t === 0 ? '#ffe6e9' : 'rgba(245, 37, 58, ' + (fade * 0.9).toFixed(3) + ')', t === 0);
+        var lit = logoCells ? logoCells[r * cols + x] : null;
+        drawGlyph(x, r, t === 0 ? '#eef4ff' : (lit || 'rgba(30, 77, 158, ' + (fade * 0.9).toFixed(3) + ')'), t === 0);
       }
     }
   }
@@ -238,10 +327,12 @@
       fadeDebt += dt;
       var fade = 1 - Math.pow(0.99, fadeDebt * 60);
       if (fade >= 0.05) {
-        ctx.fillStyle = 'rgba(7, 3, 3, ' + fade.toFixed(4) + ')';
+        ctx.fillStyle = 'rgba(3, 6, 13, ' + fade.toFixed(4) + ')';
         ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
         fadeDebt = 0;
       }
+
+      shimmerLogo();
 
       for (var i = 0; i < streams.length; i++) {
         var col = streams[i];
@@ -252,10 +343,11 @@
 
         while (col.last < next) {
           col.last++;
-          if (col.last >= 0 && col.last < rows) {
+          if (col.last >= 0 && col.last < rows && !(logoHalo && logoHalo[col.last * cols + col.x])) {
             // Demote the old head to ordinary rain, then light the new one.
-            if (col.last - 1 >= 0) drawGlyph(col.x, col.last - 1, '#f5253a', false);
-            drawGlyph(col.x, col.last, '#ffe6e9', true);
+            if (col.last - 1 >= 0) drawGlyph(col.x, col.last - 1, bodyColor(col.x, col.last - 1), false);
+            var onMark = logoCells && logoCells[col.last * cols + col.x];
+            drawGlyph(col.x, col.last, onMark ? '#ffffff' : '#b9d2f5', true);
           }
         }
 
@@ -263,7 +355,10 @@
         if (Math.random() < 0.06) {
           var back = 1 + ((Math.random() * 10) | 0);
           var r = col.last - back;
-          if (r >= 0 && r < rows) drawGlyph(col.x, r, 'rgba(176, 21, 36, 0.95)', false);
+          if (r >= 0 && r < rows && !(logoHalo && logoHalo[r * cols + col.x])) {
+            var lit = logoCells ? logoCells[r * cols + col.x] : null;
+            drawGlyph(col.x, r, lit || 'rgba(195, 34, 63, 0.95)', false);
+          }
         }
 
         if (col.last > rows + 12 + Math.random() * 14) streams[i] = seedStream(col.x, true);
